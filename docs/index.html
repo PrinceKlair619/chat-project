@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSE4/589 Chat Client</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080c08;
+    --surface: #0d140d;
+    --surface2: #111a11;
+    --border: #1f2e1f;
+    --green: #00ff41;
+    --green-dim: #00cc33;
+    --green-faint: #003310;
+    --amber: #ffb000;
+    --amber-dim: #cc8800;
+    --red: #ff3333;
+    --blue: #00cfff;
+    --text: #c8e6c8;
+    --text-dim: #5a7a5a;
+    --text-muted: #2d4a2d;
+    --scanline: rgba(0,0,0,0.12);
+    --glow: 0 0 8px rgba(0,255,65,0.4);
+    --glow-strong: 0 0 20px rgba(0,255,65,0.6), 0 0 40px rgba(0,255,65,0.2);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      var(--scanline) 2px,
+      var(--scanline) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+    animation: scanline 8s linear infinite;
+  }
+
+  @keyframes scanline {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 100%; }
+  }
+
+  /* Phosphor glow effect on text */
+  .glow { text-shadow: var(--glow); }
+  .glow-strong { text-shadow: var(--glow-strong); }
+
+  /* ── LAYOUT ── */
+  .shell {
+    display: grid;
+    grid-template-columns: 240px 1fr 220px;
+    grid-template-rows: 48px 1fr 42px;
+    height: 100vh;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    grid-column: 1/-1;
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .topbar-logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--green);
+    text-shadow: var(--glow-strong);
+    letter-spacing: 2px;
+    flex-shrink: 0;
+  }
+
+  .topbar-sep { color: var(--border); font-size: 18px; }
+
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--red);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-dot.online {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%,100% { opacity:1; } 50% { opacity:0.5; }
+  }
+
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+  .btn-small {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+  .btn-small:hover {
+    border-color: var(--green-dim);
+    color: var(--green);
+    box-shadow: var(--glow);
+  }
+  .btn-small.danger:hover {
+    border-color: var(--red);
+    color: var(--red);
+    box-shadow: 0 0 8px rgba(255,50,50,0.4);
+  }
+
+  /* ── SIDEBAR LEFT: User list ── */
+  .sidebar-left {
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  
+
+  .panel-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+
+  .panel-count {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--green-dim);
+    background: var(--green-faint);
+    padding: 1px 6px;
+    border-radius: 2px;
+  }
+
+  .user-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+  }
+
+  .user-item {
+    padding: 8px 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.15s;
+    position: relative;
+    border-left: 2px solid transparent;
+  }
+  .user-item:hover { background: var(--surface2); }
+  .user-item.selected {
+    background: var(--green-faint);
+    border-left-color: var(--green);
+  }
+  .user-item.blocked { opacity: 0.4; }
+
+  .user-avatar {
+    width: 26px; height: 26px;
+    border-radius: 2px;
+    background: var(--green-faint);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    color: var(--green-dim);
+    flex-shrink: 0;
+    font-weight: 700;
+  }
+
+  .user-info { flex: 1; min-width: 0; }
+  .user-name {
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .user-ip { font-size: 10px; color: var(--text-dim); }
+
+  .user-port {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .blocked-tag {
+    font-size: 9px;
+    color: var(--red);
+    border: 1px solid var(--red);
+    padding: 1px 4px;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* ── MAIN CHAT AREA ── */
+  .main {
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .chat-header {
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .chat-target {
+    font-size: 12px;
+    color: var(--green);
+    text-shadow: var(--glow);
+  }
+  .chat-target-label { color: var(--text-dim); font-size: 10px; }
+
+  .broadcast-toggle {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+  }
+  .broadcast-toggle:hover,
+  .broadcast-toggle.active {
+    border-color: var(--amber);
+    color: var(--amber);
+    box-shadow: 0 0 8px rgba(255,176,0,0.3);
+  }
+  .broadcast-toggle .bcast-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: background 0.2s;
+  }
+  .broadcast-toggle.active .bcast-dot {
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
+  }
+
+  /* Messages */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-track { background: transparent; }
+  .messages::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .msg-group { margin-bottom: 12px; }
+
+  .msg-meta {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .msg-from { color: var(--green-dim); font-weight: 600; }
+  .msg-from.self { color: var(--blue); }
+  .msg-from.broadcast { color: var(--amber-dim); }
+  .msg-from.system { color: var(--text-dim); }
+  .msg-time { color: var(--text-muted); }
+
+  .msg-bubble {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 7px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+    max-width: 90%;
+    word-break: break-word;
+    border-left: 2px solid var(--border);
+    animation: msg-in 0.15s ease-out;
+  }
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .msg-bubble.self {
+    background: #051505;
+    border-left-color: var(--blue);
+  }
+  .msg-bubble.broadcast {
+    background: #150f00;
+    border-left-color: var(--amber);
+  }
+  .msg-bubble.system {
+    background: transparent;
+    border: none;
+    border-left-color: var(--text-muted);
+    color: var(--text-dim);
+    font-size: 11px;
+    font-style: italic;
+  }
+  .msg-bubble.error {
+    border-left-color: var(--red);
+    color: var(--red);
+    background: #150505;
+  }
+  .msg-bubble.success {
+    border-left-color: var(--green);
+    color: var(--green-dim);
+    background: #010d01;
+  }
+
+  /* ── INPUT BAR ── */
+  .input-bar {
+    padding: 8px 16px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .input-prefix {
+    color: var(--green);
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    flex-shrink: 0;
+    text-shadow: var(--glow);
+  }
+
+  .msg-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    caret-color: var(--green);
+  }
+  .msg-input::placeholder { color: var(--text-muted); }
+  .msg-input:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .char-count {
+    font-size: 10px;
+    color: var(--text-muted);
+    min-width: 40px;
+    text-align: right;
+  }
+  .char-count.warn { color: var(--amber); }
+  .char-count.over { color: var(--red); }
+
+  .send-btn {
+    background: var(--green-faint);
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    padding: 5px 14px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    text-shadow: var(--glow);
+  }
+  .send-btn:hover {
+    background: #003310;
+    box-shadow: var(--glow);
+  }
+  .send-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  /* ── SIDEBAR RIGHT: Login + Log ── */
+  .sidebar-right {
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Login Panel */
+  .login-panel {
+    padding: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .login-panel .panel-title { margin-bottom: 10px; display: block; }
+
+  .field-group { margin-bottom: 8px; }
+  .field-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+    display: block;
+  }
+  .field-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 5px 8px;
+    outline: none;
+    transition: border-color 0.2s;
+    caret-color: var(--green);
+  }
+  .field-input:focus { border-color: var(--green-dim); box-shadow: 0 0 0 1px var(--green-faint); }
+  .field-input::placeholder { color: var(--text-muted); }
+
+  .login-btn {
+    width: 100%;
+    background: var(--green-faint);
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    padding: 7px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+    text-shadow: var(--glow);
+    margin-top: 4px;
+  }
+  .login-btn:hover { background: #003310; box-shadow: var(--glow); }
+  .login-btn.logout {
+    background: #150505;
+    border-color: var(--red);
+    color: var(--red);
+    text-shadow: none;
+  }
+  .login-btn.logout:hover { background: #200808; box-shadow: 0 0 8px rgba(255,50,50,0.3); }
+
+  /* Raw log */
+  .raw-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .raw-log::-webkit-scrollbar { width: 3px; }
+  .raw-log::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .log-line {
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    font-family: 'Space Mono', monospace;
+    word-break: break-all;
+    animation: log-in 0.1s ease-out;
+  }
+  @keyframes log-in { from { opacity: 0; } to { opacity: 1; } }
+  .log-line.success { color: var(--green-dim); }
+  .log-line.error { color: var(--red); opacity: 0.7; }
+  .log-line.tag { color: var(--text-dim); }
+  .log-line.info { color: var(--amber-dim); }
+
+  /* ── STATUSBAR ── */
+  .statusbar {
+    grid-column: 1/-1;
+    background: var(--green-faint);
+    border-top: 1px solid var(--green-dim);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 20px;
+  }
+
+  .stat-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .stat-label { color: var(--text-muted); }
+  .stat-val { color: var(--green-dim); font-weight: 600; }
+
+  /* ── MODAL ── */
+  .modal-bg {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    display: none;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--green-dim);
+    box-shadow: var(--glow-strong);
+    padding: 20px;
+    min-width: 300px;
+    max-width: 400px;
+    width: 90%;
+    animation: modal-in 0.2s ease-out;
+  }
+  @keyframes modal-in {
+    from { opacity: 0; transform: scale(0.95) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .modal-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--green);
+    text-shadow: var(--glow);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-body { margin-bottom: 16px; font-size: 12px; color: var(--text); line-height: 1.7; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ── UTILITY ── */
+  .hidden { display: none !important; }
+
+  /* Scrollbar global */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .client-search-wrap {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.client-search {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  padding: 8px 10px;
+  outline: none;
+  transition: 0.2s ease;
+}
+
+.client-search:focus {
+  border-color: var(--green-dim);
+  box-shadow: 0 0 0 1px var(--green-faint);
+}
+
+.toast-wrap {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toast {
+  min-width: 220px;
+  max-width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 12px;
+  box-shadow: var(--glow);
+  animation: toastIn 0.2s ease-out;
+}
+
+.toast.success {
+  border-color: var(--green-dim);
+}
+
+.toast.error {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.toast.info {
+  border-color: var(--amber);
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.typing-indicator {
+  font-size: 11px;
+  color: var(--amber);
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  background: rgba(255,176,0,0.06);
+  display: inline-block;
+  margin-top: 6px;
+}
+
+.status-pill {
+  font-size: 9px;
+  padding: 2px 5px;
+  border: 1px solid var(--green-dim);
+  color: var(--green);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-left: 6px;
+}
+
+.status-pill.blocked {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.status-pill.selected {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <span class="topbar-logo glow-strong">/ CHAT</span>
+    <span class="topbar-sep">|</span>
+    <div class="status-badge">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">OFFLINE</span>
+    </div>
+    <span class="topbar-sep" id="myIpDisplay" style="display:none;"></span>
+    <div class="topbar-right">
+      <button class="btn-small" onclick="runCommand('LIST')">LIST</button>
+      <button class="btn-small" onclick="runCommand('REFRESH')">REFRESH</button>
+      <button class="btn-small" id="blockBtn" onclick="openBlockModal()" style="display:none;">BLOCK</button>
+      <button class="btn-small danger" id="unblockBtn" onclick="openUnblockModal()" style="display:none;">UNBLOCK</button>
+    </div>
+  </div>
+
+  <!-- SIDEBAR LEFT: Clients -->
+  <div class="sidebar-left">
+    <div class="panel-header">
+      <span class="panel-title">Connected</span>
+      <span class="panel-count" id="userCount">0</span>
+    </div>
+    <div class="user-list" id="userList">
+      <div style="padding:20px 14px; color:var(--text-muted); font-size:11px; text-align:center; line-height:1.8;">
+        LOGIN to see<br>online clients
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN CHAT -->
+  <div class="main">
+    <div class="chat-header">
+      <div>
+        <div class="chat-target-label">TARGET</div>
+        <div class="chat-target" id="chatTarget">— no target selected —</div>
+      </div>
+      <div class="broadcast-toggle" id="broadcastToggle" onclick="toggleBroadcast()">
+        <span class="bcast-dot"></span>
+        BROADCAST ALL
+      </div>
+    </div>
+    <div class="messages" id="messages">
+      <div class="msg-group">
+        <div class="msg-bubble system">
+          CSE4/589 Chat Client v1.0 — TCP text relay<br>
+          Connect to a server using the LOGIN panel →
+        </div>
+      </div>
+    </div>
+    <div class="input-bar">
+      <span class="input-prefix">&gt;_</span>
+      <input class="msg-input" id="msgInput" type="text" placeholder="type message… (max 256 chars)" maxlength="256" disabled>
+      <span class="char-count" id="charCount">256</span>
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>SEND</button>
+    </div>
+  </div>
+
+  <!-- SIDEBAR RIGHT: Login + Log -->
+  <div class="sidebar-right">
+    <div class="panel-header">
+      <span class="panel-title">Connection</span>
+    </div>
+    <div class="login-panel">
+      <div id="loginForm">
+        <div class="field-group">
+          <label class="field-label">Server IP</label>
+          <input class="field-input" id="serverIp" type="text" placeholder="192.168.1.1" value="127.0.0.1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Server Port</label>
+          <input class="field-input" id="serverPort" type="text" placeholder="5000" value="5000">
+        </div>
+        <div class="field-group">
+          <label class="field-label">My Listen Port</label>
+          <input class="field-input" id="myPort" type="text" placeholder="6000" value="6000">
+        </div>
+        <button class="login-btn" onclick="doLogin()">▶ LOGIN</button>
+      </div>
+      <div id="loggedInForm" class="hidden">
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:8px;">
+          <span style="color:var(--text-muted);">SERVER: </span><span id="connectedServer" style="color:var(--green-dim);"></span>
+        </div>
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:10px;">
+          <span style="color:var(--text-muted);">MY PORT: </span><span id="connectedPort" style="color:var(--green-dim);"></span>
+        </div>
+        <button class="login-btn logout" onclick="doLogout()">■ LOGOUT</button>
+      </div>
+    </div>
+
+    <div class="panel-header" style="border-top:1px solid var(--border);">
+      <span class="panel-title">Protocol Log</span>
+    </div>
+    <div class="raw-log" id="rawLog">
+      <div class="log-line">-- ready --</div>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <div class="stat-item">
+      <span class="stat-label">SENT</span>
+      <span class="stat-val" id="statSent">0</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">RECV</span>
+      <span class="stat-val" id="statRecv">0</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">CLIENTS</span>
+      <span class="stat-val" id="statClients">0</span>
+    </div>
+    <div class="stat-item" style="margin-left:auto;">
+      <span class="stat-label">MODE</span>
+      <span class="stat-val" id="statMode">OFFLINE</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- Block Modal -->
+<div class="modal-bg" id="blockModal">
+  <div class="modal">
+    <div class="modal-title">Block Client</div>
+    <div class="modal-body">
+      Block <strong id="blockTargetName" style="color:var(--green);"></strong>?<br>
+      <span style="color:var(--text-dim); font-size:11px;">They will not be able to send you messages.</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-small" onclick="closeModal('blockModal')">CANCEL</button>
+      <button class="btn-small danger" onclick="confirmBlock()">BLOCK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Unblock Modal -->
+<div class="modal-bg" id="unblockModal">
+  <div class="modal">
+    <div class="modal-title">Unblock Client</div>
+    <div class="modal-body">
+      Unblock <strong id="unblockTargetName" style="color:var(--green);"></strong>?
+    </div>
+    <div class="modal-actions">
+      <button class="btn-small" onclick="closeModal('unblockModal')">CANCEL</button>
+      <button class="btn-small" onclick="confirmUnblock()">UNBLOCK</button>
+    </div>
+  </div>
+</div>
+<div id="toastWrap" class="toast-wrap"></div>
+<script>
+// ─── STATE ───────────────────────────────────────────────────────────
+const state = {
+  loggedIn: false,
+  serverIp: '',
+  serverPort: '',
+  myPort: '',
+  myIp: '',
+  clients: [],       // [{hostname, ip, port, blocked}]
+  selectedIp: null,
+  broadcastMode: false,
+  messages: [],
+  stats: { sent: 0, recv: 0 },
+};
+
+let typingTimer = null;
+let isConnecting = false;
+
+function showToast(message, type = 'info') {
+  const wrap = document.getElementById('toastWrap');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  wrap.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-6px)';
+    toast.style.transition = '0.2s ease';
+    setTimeout(() => toast.remove(), 200);
+  }, 2200);
+}
+
+function showTyping(name) {
+  removeTyping();
+  const msgs = document.getElementById('messages');
+  const box = document.createElement('div');
+  box.id = 'typingIndicator';
+  box.className = 'typing-indicator';
+  box.textContent = `${name} is typing...`;
+  msgs.appendChild(box);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeTyping() {
+  const el = document.getElementById('typingIndicator');
+  if (el) el.remove();
+}
+
+// ─── TIMESTAMP ───────────────────────────────────────────────────────
+function ts() {
+  const now = new Date();
+  return now.toTimeString().slice(0,8);
+}
+
+// ─── LOG ─────────────────────────────────────────────────────────────
+function log(text, type='') {
+  const el = document.getElementById('rawLog');
+  const line = document.createElement('div');
+  line.className = 'log-line' + (type ? ' '+type : '');
+  line.textContent = text;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ─── ADD MESSAGE ─────────────────────────────────────────────────────
+function addMsg(from, text, type='') {
+  const msgs = document.getElementById('messages');
+  const group = document.createElement('div');
+  group.className = 'msg-group';
+
+  const meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  const fromEl = document.createElement('span');
+  fromEl.className = 'msg-from ' + (type || '');
+  fromEl.textContent = from;
+  const timeEl = document.createElement('span');
+  timeEl.className = 'msg-time';
+  timeEl.textContent = ts();
+  meta.appendChild(fromEl);
+  meta.appendChild(timeEl);
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble ' + (type || '');
+  bubble.textContent = text;
+
+  group.appendChild(meta);
+  group.appendChild(bubble);
+  msgs.appendChild(group);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ─── UPDATE UI ───────────────────────────────────────────────────────
+function updateUI() {
+  // Status
+  const dot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const statMode = document.getElementById('statMode');
+
+  if (state.loggedIn) {
+    dot.classList.add('online');
+    statusText.textContent = 'ONLINE';
+    statMode.textContent = state.broadcastMode ? 'BROADCAST' : (state.selectedIp ? 'UNICAST' : 'IDLE');
+  } else {
+    dot.classList.remove('online');
+    statusText.textContent = 'OFFLINE';
+    statMode.textContent = 'OFFLINE';
+  }
+
+  // My IP
+  const ipDisplay = document.getElementById('myIpDisplay');
+  if (state.myIp) {
+    ipDisplay.style.display = '';
+    ipDisplay.textContent = 'MY IP: ' + state.myIp + ':' + state.myPort;
+    ipDisplay.style.color = 'var(--text-dim)';
+    ipDisplay.style.fontSize = '11px';
+  } else {
+    ipDisplay.style.display = 'none';
+  }
+
+  // Login/logout panel
+  const loginForm = document.getElementById('loginForm');
+  const loggedInForm = document.getElementById('loggedInForm');
+  if (state.loggedIn) {
+    loginForm.classList.add('hidden');
+    loggedInForm.classList.remove('hidden');
+    document.getElementById('connectedServer').textContent = state.serverIp + ':' + state.serverPort;
+    document.getElementById('connectedPort').textContent = state.myPort;
+  } else {
+    loginForm.classList.remove('hidden');
+    loggedInForm.classList.add('hidden');
+  }
+
+  // User list
+  const ul = document.getElementById('userList');
+  document.getElementById('userCount').textContent = state.clients.length;
+  document.getElementById('statClients').textContent = state.clients.length;
+
+  if (state.clients.length === 0) {
+    ul.innerHTML = '<div style="padding:20px 14px; color:var(--text-muted); font-size:11px; text-align:center; line-height:1.8;">' +
+      (state.loggedIn ? 'No other clients online' : 'LOGIN to see<br>online clients') + '</div>';
+  } else {
+    ul.innerHTML = '';
+    state.clients.forEach(c => {
+      const item = document.createElement('div');
+      item.className = 'user-item' + (c.ip === state.selectedIp ? ' selected' : '') + (c.blocked ? ' blocked' : '');
+      item.onclick = () => selectUser(c.ip);
+      item.ondblclick = () => {
+  selectUser(c.ip);
+  document.getElementById('msgInput').focus();
+  showToast(`Target locked: ${c.hostname}`, 'success');
+};
+
+      const avatar = document.createElement('div');
+      avatar.className = 'user-avatar';
+      avatar.textContent = (c.hostname || c.ip).charAt(0).toUpperCase();
+
+      const info = document.createElement('div');
+      info.className = 'user-info';
+      const name = document.createElement('div');
+      name.className = 'user-name';
+      name.textContent = c.hostname || c.ip;
+      if (c.ip === state.selectedIp) {
+  const pill = document.createElement('span');
+  pill.className = 'status-pill selected';
+  pill.textContent = 'selected';
+  name.appendChild(pill);
+} else if (c.blocked) {
+  const pill = document.createElement('span');
+  pill.className = 'status-pill blocked';
+  pill.textContent = 'blocked';
+  name.appendChild(pill);
+}
+      const ip = document.createElement('div');
+      ip.className = 'user-ip';
+      ip.textContent = c.ip;
+      info.appendChild(name);
+      info.appendChild(ip);
+
+      const port = document.createElement('div');
+      port.className = 'user-port';
+      port.textContent = ':' + c.port;
+
+      item.appendChild(avatar);
+      item.appendChild(info);
+
+      if (c.blocked) {
+        const tag = document.createElement('span');
+        tag.className = 'blocked-tag';
+        tag.textContent = 'BLK';
+        item.appendChild(tag);
+      } else {
+        item.appendChild(port);
+      }
+
+      ul.appendChild(item);
+    });
+  }
+
+  // Chat target
+  const chatTarget = document.getElementById('chatTarget');
+  if (state.broadcastMode) {
+    chatTarget.textContent = '255.255.255.255 (all clients)';
+    chatTarget.style.color = 'var(--amber)';
+    chatTarget.style.textShadow = '0 0 8px rgba(255,176,0,0.4)';
+  } else if (state.selectedIp) {
+    const c = state.clients.find(x => x.ip === state.selectedIp);
+    chatTarget.textContent = (c ? c.hostname + ' / ' : '') + state.selectedIp;
+    chatTarget.style.color = 'var(--green)';
+    chatTarget.style.textShadow = 'var(--glow)';
+  } else {
+    chatTarget.textContent = '— no target selected —';
+    chatTarget.style.color = 'var(--text-dim)';
+    chatTarget.style.textShadow = 'none';
+  }
+
+  // Broadcast toggle style
+  const bt = document.getElementById('broadcastToggle');
+  if (state.broadcastMode) bt.classList.add('active');
+  else bt.classList.remove('active');
+
+  // Send button enabled
+  const canSend = state.loggedIn && (state.broadcastMode || state.selectedIp);
+  document.getElementById('msgInput').disabled = !canSend;
+  document.getElementById('sendBtn').disabled = !canSend;
+
+  // Block/Unblock buttons
+  const blockBtn = document.getElementById('blockBtn');
+  const unblockBtn = document.getElementById('unblockBtn');
+  if (state.loggedIn && state.selectedIp) {
+    const c = state.clients.find(x => x.ip === state.selectedIp);
+    if (c) {
+      blockBtn.style.display = c.blocked ? 'none' : '';
+      unblockBtn.style.display = c.blocked ? '' : 'none';
+    }
+  } else {
+    blockBtn.style.display = 'none';
+    unblockBtn.style.display = 'none';
+  }
+
+  // Stats
+  document.getElementById('statSent').textContent = state.stats.sent;
+  document.getElementById('statRecv').textContent = state.stats.recv;
+}
+
+// ─── SELECT USER ─────────────────────────────────────────────────────
+function selectUser(ip) {
+  if (!state.loggedIn) return;
+  state.selectedIp = ip;
+  state.broadcastMode = false;
+  updateUI();
+}
+
+function toggleBroadcast() {
+  if (!state.loggedIn) return;
+  state.broadcastMode = !state.broadcastMode;
+  if (state.broadcastMode) state.selectedIp = null;
+  updateUI();
+}
+
+// ─── LOGIN / LOGOUT ───────────────────────────────────────────────────
+function doLogin() {
+  const ip = document.getElementById('serverIp').value.trim();
+  const port = document.getElementById('serverPort').value.trim();
+  const myPort = document.getElementById('myPort').value.trim();
+
+  if (!ip || !port || !myPort) {
+    log('[LOGIN:ERROR] — missing fields', 'error');
+    addMsg('SYSTEM', 'LOGIN failed: fill all fields.', 'error');
+    showToast('Missing login fields', 'error');
+    return;
+  }
+
+  const ipParts = ip.split('.');
+  if (ipParts.length !== 4 || ipParts.some(p => isNaN(p) || +p < 0 || +p > 255)) {
+    log('[LOGIN:ERROR] — invalid IP', 'error');
+    addMsg('SYSTEM', 'LOGIN failed: invalid server IP.', 'error');
+    showToast('Invalid server IP', 'error');
+    return;
+  }
+
+  if (!+port || +port > 65535 || !+myPort || +myPort > 65535) {
+    log('[LOGIN:ERROR] — invalid port', 'error');
+    addMsg('SYSTEM', 'LOGIN failed: invalid port.', 'error');
+    showToast('Invalid port', 'error');
+    return;
+  }
+
+  if (isConnecting) return;
+  isConnecting = true;
+  showToast('Connecting...', 'info');
+  addMsg('SYSTEM', `Attempting connection to ${ip}:${port}...`, 'system');
+
+  setTimeout(() => {
+    log('[LOGIN:SUCCESS]', 'success');
+    log('[LOGIN:END]', 'tag');
+
+    state.loggedIn = true;
+    state.serverIp = ip;
+    state.serverPort = port;
+    state.myPort = myPort;
+    state.myIp = '192.168.' + Math.floor(Math.random()*254+1) + '.' + Math.floor(Math.random()*254+1);
+    state.clients = generateDemoClients(state.myIp, myPort);
+
+    addMsg('SYSTEM', `Connected to ${ip}:${port} — ${state.clients.length} client(s) online.`, 'success');
+    showToast('Login successful', 'success');
+    isConnecting = false;
+    updateUI();
+  }, 900);
+}
+
+function doLogout() {
+  log('[LOGOUT:SUCCESS]', 'success');
+  log('[LOGOUT:END]', 'tag');
+  state.loggedIn = false;
+  state.clients = [];
+  state.selectedIp = null;
+  state.broadcastMode = false;
+  state.myIp = '';
+  addMsg('SYSTEM', 'Disconnected from server.');
+  updateUI();
+}
+
+// ─── COMMANDS ────────────────────────────────────────────────────────
+function runCommand(cmd) {
+  if (cmd === 'LIST') {
+    log('[LIST:SUCCESS]', 'success');
+    state.clients.forEach((c, i) => {
+      log(`${String(i+1).padEnd(5)}${c.hostname.padEnd(35)}${c.ip.padEnd(20)}${c.port}`, 'info');
+    });
+    log('[LIST:END]', 'tag');
+    addMsg('SYSTEM', `LIST: ${state.clients.length} client(s) online.`);
+  } else if (cmd === 'REFRESH') {
+    if (!state.loggedIn) {
+      log('[REFRESH:ERROR]', 'error'); log('[REFRESH:END]', 'tag');
+      return;
+    }
+    log('[REFRESH:SUCCESS]', 'success'); log('[REFRESH:END]', 'tag');
+    // Simulate refresh — maybe add a random new client
+    if (Math.random() > 0.5 && state.clients.length < 6) {
+      const newClient = randomClient();
+      state.clients.push(newClient);
+      addMsg('SYSTEM', `REFRESH: ${newClient.hostname} joined.`);
+    } else {
+      addMsg('SYSTEM', `REFRESH: client list up to date (${state.clients.length} online).`);
+    }
+    updateUI();
+  }
+}
+
+// ─── SEND / BROADCAST ────────────────────────────────────────────────
+function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const msg = input.value.trim();
+  if (!msg || msg.length > 256) return;
+  if (!state.loggedIn) return;
+
+  input.value = '';
+  updateCharCount('');
+
+  if (state.broadcastMode) {
+    log('[BROADCAST:SUCCESS]', 'success');
+    log('[BROADCAST:END]', 'tag');
+    state.stats.sent++;
+    addMsg('YOU → BROADCAST', msg, 'self');
+
+    // Simulate some clients receiving and one replying
+    setTimeout(() => {
+      const responder = state.clients.find(c => !c.blocked);
+      if (responder) simulateReply(responder, msg);
+    }, 600 + Math.random()*1200);
+
+  } else if (state.selectedIp) {
+    const target = state.clients.find(c => c.ip === state.selectedIp);
+    if (!target) return;
+    if (target.blocked) {
+      addMsg('SYSTEM', `SEND failed: ${state.selectedIp} is blocked.`, 'error');
+      return;
+    }
+    log(`[SEND:SUCCESS]`, 'success'); log('[SEND:END]', 'tag');
+    state.stats.sent++;
+    addMsg(`YOU → ${target.hostname}`, msg, 'self');
+
+    // Simulate reply
+    if (Math.random() > 0.3) {
+      setTimeout(() => simulateReply(target, msg), 800 + Math.random()*2000);
+    }
+  }
+
+  updateUI();
+}
+
+function simulateReply(client, originalMsg) {
+  const replies = [
+    'got it, thanks!', 'received', 'ok', '👍', 'copy that', 'understood',
+    'ack', 'message received', '10-4', 'noted', 'roger',
+    'can you resend that?', 'what do you mean?', 'interesting'
+  ];
+
+  showTyping(client.hostname);
+
+  setTimeout(() => {
+    removeTyping();
+
+    const reply = replies[Math.floor(Math.random() * replies.length)];
+    const fromLabel = state.broadcastMode ? `BROADCAST ← ${client.hostname}` : `← ${client.hostname}`;
+    const type = state.broadcastMode ? 'broadcast' : '';
+
+    log('[RECEIVED:SUCCESS]', 'success');
+    log(`msg from:${client.ip}`, 'info');
+    log(`[msg]:${reply}`, '');
+    log('[RECEIVED:END]', 'tag');
+
+    state.stats.recv++;
+    addMsg(fromLabel, reply, type);
+    showToast(`New message from ${client.hostname}`, 'info');
+    updateUI();
+  }, 900 + Math.random() * 1200);
+}
+
+// ─── BLOCK / UNBLOCK ─────────────────────────────────────────────────
+let blockTarget = null;
+
+function openBlockModal() {
+  if (!state.selectedIp) return;
+  const c = state.clients.find(x => x.ip === state.selectedIp);
+  if (!c || c.blocked) return;
+  blockTarget = c;
+  document.getElementById('blockTargetName').textContent = c.hostname + ' (' + c.ip + ')';
+  document.getElementById('blockModal').classList.add('open');
+}
+
+function confirmBlock() {
+  if (!blockTarget) return;
+  blockTarget.blocked = true;
+  log(`[BLOCK:SUCCESS]`, 'success'); log('[BLOCK:END]', 'tag');
+  addMsg('SYSTEM', `Blocked ${blockTarget.hostname} (${blockTarget.ip}).`, 'error');
+  closeModal('blockModal');
+  blockTarget = null;
+  updateUI();
+}
+
+function openUnblockModal() {
+  if (!state.selectedIp) return;
+  const c = state.clients.find(x => x.ip === state.selectedIp);
+  if (!c || !c.blocked) return;
+  blockTarget = c;
+  document.getElementById('unblockTargetName').textContent = c.hostname + ' (' + c.ip + ')';
+  document.getElementById('unblockModal').classList.add('open');
+}
+
+function confirmUnblock() {
+  if (!blockTarget) return;
+  blockTarget.blocked = false;
+  log(`[UNBLOCK:SUCCESS]`, 'success'); log('[UNBLOCK:END]', 'tag');
+  addMsg('SYSTEM', `Unblocked ${blockTarget.hostname} (${blockTarget.ip}).`, 'success');
+  closeModal('unblockModal');
+  blockTarget = null;
+  updateUI();
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// ─── CHAR COUNT ───────────────────────────────────────────────────────
+function updateCharCount(val) {
+  const rem = 256 - val.length;
+  const el = document.getElementById('charCount');
+  el.textContent = rem;
+  el.className = 'char-count' + (rem < 20 ? ' over' : rem < 50 ? ' warn' : '');
+}
+
+document.getElementById('msgInput').addEventListener('input', e => updateCharCount(e.target.value));
+document.getElementById('msgInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendMessage();
+});
+
+// Close modals on bg click
+document.querySelectorAll('.modal-bg').forEach(bg => {
+  bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
+});
+
+// ─── DEMO DATA ────────────────────────────────────────────────────────
+const hostnames = [
+  'student-ubuntu-01', 'grader-vm', 'cse589-client2', 'netlab03',
+  'buffalo-host-77', 'lab-pc-12', 'relay-node', 'test-machine-x',
+];
+const ips = [
+  '192.168.1.', '10.0.0.', '172.16.0.',
+];
+
+function randomClient() {
+  const base = ips[Math.floor(Math.random()*ips.length)];
+  const last = Math.floor(Math.random()*253) + 2;
+  return {
+    hostname: hostnames[Math.floor(Math.random()*hostnames.length)] + '-' + last,
+    ip: base + last,
+    port: 5001 + Math.floor(Math.random() * 1000),
+    blocked: false,
+  };
+}
+
+function generateDemoClients(myIp, myPort) {
+  const count = 3 + Math.floor(Math.random() * 3);
+  const clients = [];
+  for (let i = 0; i < count; i++) clients.push(randomClient());
+  return clients;
+}
+document.getElementById('clientSearch')?.addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  const items = document.querySelectorAll('.user-item');
+
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(q) ? '' : 'none';
+  });
+});
+
+// ─── INIT ─────────────────────────────────────────────────────────────
+updateUI();
+</script>
+</body>
+</html>
