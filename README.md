@@ -1,57 +1,53 @@
-# CSE4/589: Modern Network Concepts - Programming Assignment 1
+Chat System
 
-Welcome to Programming Assignment 1 for CSE4/589: Modern Network Concepts, focused on developing a text chat application. This assignment involves building both client and server components to enable text communication over TCP connections. Follow the guidelines below to start your project.
+TCP Chat Client and Interactive Web Frontend
 
-## Objectives
+Overview
 
-The main goal is to develop a text chat application comprising one chat server and multiple chat clients, facilitating communication over TCP connections. The project has to be done in one stage.
+This project implements a TCP based chat system using C++ socket programming. Multiple clients can connect to a central server, communicate in real time, and execute commands such as LOGIN, SEND, BROADCAST, BLOCK, UNBLOCK, LIST, and REFRESH.
 
-## Getting Started
+In addition to the terminal based system, a custom web frontend was developed to provide an interactive and visual representation of client communication.
 
-This assignment is to be completed in **C++**. The repository contains all the necessary starter code and files you need to begin development.
+Tech Stack
 
-## Directory Structure
+Backend
+C++
+BSD Sockets using TCP
+select system call for I O multiplexing
 
-Your repository follows the structure outlined below:
+Frontend
+HTML CSS JavaScript
+Dynamic DOM manipulation
+Terminal style user interface
 
-```
-.
-├── README.md
-├── assignment1_package.sh
-├── grader
-│   ├── grader.cfg
-│   └── grader_controller
-└── pa1
-    ├── Makefile
-    ├── include
-    │   ├── global.h
-    │   └── logger.h
-    ├── logs
-    ├── object
-    └── src
-        ├── assignment1.cpp
-        └── logger.cpp
-```
+Features
 
-## Resources
+Networking Backend
+Multi client TCP server
+Concurrent client handling using select
+Full duplex communication
+Client tracking including IP address port and hostname
+Direct messaging between clients
+Broadcast messaging to all clients
+Block and unblock functionality
+Command parsing and protocol logging
 
-To assist you with the assignment, please refer to the following resources:
+Interactive Frontend
+Terminal inspired interface
+Live client list with selection and status indicators
+Broadcast and unicast messaging modes
+Typing indicator simulation
+Toast notifications for actions and errors
+Protocol log display
+Double click to select chat targets
+Character limit tracking for messages
 
-- **Assignment Handout:** [Link](https://docs.google.com/document/d/1TcBbtHOqO4g3WU23iRg4vJpFTipphOyv9S9uaGFbafw/edit?usp=sharing)
-- **Assignment Template:** [Link](https://docs.google.com/document/d/1_P_xTPFdgrUYT_EuH6rTsy0YEqgaCghptbis7GxVyaE/edit?usp=sharing)
-- **Assignment Phase 1 Report Template:** [Link](https://docs.google.com/document/d/1bv8NHBQW3ndN1_YwRDW4cjKD9xJtgWeiaMyxV6dHWBQ/edit?usp=sharing)
-- **Assignment Phase 2 Report Template:** [Link](https://docs.google.com/document/d/1QHcTFQVnhtVTIR34VKLOF9NSRW-eHILCGB-GVxAxEZ4/edit?usp=sharing)
+How It Works
 
-Please ensure you read through the handout thoroughly before starting the assignment to understand the requirements and deliverables.
+Backend
+The server listens for incoming TCP connections and maintains a list of active clients. Using select it can handle multiple clients without using threads. Commands received from clients are parsed and executed. Messages are routed to the correct destination and blocked users are prevented from sending messages.
 
-## Support
+Frontend
+The frontend acts as a visual simulation layer. It mimics client behavior, simulates message sending and receiving, and provides a graphical interface for interacting with the system.
 
-For any doubts or clarifications, please refer to the [Piazza forum](https://piazza.com/class/meszbu3lug95z0) for our course. Make sure to follow the forum for updates and discussions related to the assignment.
-
-## Submission Guidelines
-
-- Use the `assignment1_package.sh` script to package your submission.
-- Ensure your code compiles and runs as expected in the provided environment.
-- Submit your assignment through the designated submission portal before the deadline.
-
-Wishing you the best with your assignment!
+Note The frontend is not directly connected to the C++ backend and is used for demonstration and visualization purposes.
