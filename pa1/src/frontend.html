@@ -154,6 +154,7 @@
     flex-direction: column;
     overflow: hidden;
   }
+  
 
   .panel-header {
     padding: 10px 14px;
@@ -588,6 +589,99 @@
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .client-search-wrap {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.client-search {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  padding: 8px 10px;
+  outline: none;
+  transition: 0.2s ease;
+}
+
+.client-search:focus {
+  border-color: var(--green-dim);
+  box-shadow: 0 0 0 1px var(--green-faint);
+}
+
+.toast-wrap {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toast {
+  min-width: 220px;
+  max-width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 12px;
+  box-shadow: var(--glow);
+  animation: toastIn 0.2s ease-out;
+}
+
+.toast.success {
+  border-color: var(--green-dim);
+}
+
+.toast.error {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.toast.info {
+  border-color: var(--amber);
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.typing-indicator {
+  font-size: 11px;
+  color: var(--amber);
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  background: rgba(255,176,0,0.06);
+  display: inline-block;
+  margin-top: 6px;
+}
+
+.status-pill {
+  font-size: 9px;
+  padding: 2px 5px;
+  border: 1px solid var(--green-dim);
+  color: var(--green);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-left: 6px;
+}
+
+.status-pill.blocked {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.status-pill.selected {
+  border-color: var(--amber);
+  color: var(--amber);
+}
 </style>
 </head>
 <body>
@@ -742,7 +836,7 @@
     </div>
   </div>
 </div>
-
+<div id="toastWrap" class="toast-wrap"></div>
 <script>
 // ─── STATE ───────────────────────────────────────────────────────────
 const state = {
@@ -757,6 +851,40 @@ const state = {
   messages: [],
   stats: { sent: 0, recv: 0 },
 };
+
+let typingTimer = null;
+let isConnecting = false;
+
+function showToast(message, type = 'info') {
+  const wrap = document.getElementById('toastWrap');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  wrap.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-6px)';
+    toast.style.transition = '0.2s ease';
+    setTimeout(() => toast.remove(), 200);
+  }, 2200);
+}
+
+function showTyping(name) {
+  removeTyping();
+  const msgs = document.getElementById('messages');
+  const box = document.createElement('div');
+  box.id = 'typingIndicator';
+  box.className = 'typing-indicator';
+  box.textContent = `${name} is typing...`;
+  msgs.appendChild(box);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeTyping() {
+  const el = document.getElementById('typingIndicator');
+  if (el) el.remove();
+}
 
 // ─── TIMESTAMP ───────────────────────────────────────────────────────
 function ts() {
@@ -856,6 +984,11 @@ function updateUI() {
       const item = document.createElement('div');
       item.className = 'user-item' + (c.ip === state.selectedIp ? ' selected' : '') + (c.blocked ? ' blocked' : '');
       item.onclick = () => selectUser(c.ip);
+      item.ondblclick = () => {
+  selectUser(c.ip);
+  document.getElementById('msgInput').focus();
+  showToast(`Target locked: ${c.hostname}`, 'success');
+};
 
       const avatar = document.createElement('div');
       avatar.className = 'user-avatar';
@@ -866,6 +999,17 @@ function updateUI() {
       const name = document.createElement('div');
       name.className = 'user-name';
       name.textContent = c.hostname || c.ip;
+      if (c.ip === state.selectedIp) {
+  const pill = document.createElement('span');
+  pill.className = 'status-pill selected';
+  pill.textContent = 'selected';
+  name.appendChild(pill);
+} else if (c.blocked) {
+  const pill = document.createElement('span');
+  pill.className = 'status-pill blocked';
+  pill.textContent = 'blocked';
+  name.appendChild(pill);
+}
       const ip = document.createElement('div');
       ip.className = 'user-ip';
       ip.textContent = c.ip;
@@ -962,35 +1106,46 @@ function doLogin() {
   if (!ip || !port || !myPort) {
     log('[LOGIN:ERROR] — missing fields', 'error');
     addMsg('SYSTEM', 'LOGIN failed: fill all fields.', 'error');
+    showToast('Missing login fields', 'error');
     return;
   }
-  // Validate IP
+
   const ipParts = ip.split('.');
   if (ipParts.length !== 4 || ipParts.some(p => isNaN(p) || +p < 0 || +p > 255)) {
     log('[LOGIN:ERROR] — invalid IP', 'error');
     addMsg('SYSTEM', 'LOGIN failed: invalid server IP.', 'error');
+    showToast('Invalid server IP', 'error');
     return;
   }
+
   if (!+port || +port > 65535 || !+myPort || +myPort > 65535) {
     log('[LOGIN:ERROR] — invalid port', 'error');
     addMsg('SYSTEM', 'LOGIN failed: invalid port.', 'error');
+    showToast('Invalid port', 'error');
     return;
   }
 
-  log('[LOGIN:SUCCESS]', 'success');
-  log('[LOGIN:END]', 'tag');
+  if (isConnecting) return;
+  isConnecting = true;
+  showToast('Connecting...', 'info');
+  addMsg('SYSTEM', `Attempting connection to ${ip}:${port}...`, 'system');
 
-  state.loggedIn = true;
-  state.serverIp = ip;
-  state.serverPort = port;
-  state.myPort = myPort;
-  state.myIp = '192.168.' + Math.floor(Math.random()*254+1) + '.' + Math.floor(Math.random()*254+1);
+  setTimeout(() => {
+    log('[LOGIN:SUCCESS]', 'success');
+    log('[LOGIN:END]', 'tag');
 
-  // Simulate receiving client list
-  state.clients = generateDemoClients(state.myIp, myPort);
+    state.loggedIn = true;
+    state.serverIp = ip;
+    state.serverPort = port;
+    state.myPort = myPort;
+    state.myIp = '192.168.' + Math.floor(Math.random()*254+1) + '.' + Math.floor(Math.random()*254+1);
+    state.clients = generateDemoClients(state.myIp, myPort);
 
-  addMsg('SYSTEM', `Connected to ${ip}:${port} — ${state.clients.length} client(s) online.`, 'success');
-  updateUI();
+    addMsg('SYSTEM', `Connected to ${ip}:${port} — ${state.clients.length} client(s) online.`, 'success');
+    showToast('Login successful', 'success');
+    isConnecting = false;
+    updateUI();
+  }, 900);
 }
 
 function doLogout() {
@@ -1078,18 +1233,28 @@ function simulateReply(client, originalMsg) {
   const replies = [
     'got it, thanks!', 'received', 'ok', '👍', 'copy that', 'understood',
     'ack', 'message received', '10-4', 'noted', 'roger',
-    'can you resend that?', 'what do you mean?', 'interesting',
+    'can you resend that?', 'what do you mean?', 'interesting'
   ];
-  const reply = replies[Math.floor(Math.random() * replies.length)];
-  const fromLabel = state.broadcastMode ? `BROADCAST ← ${client.hostname}` : `← ${client.hostname}`;
-  const type = state.broadcastMode ? 'broadcast' : '';
-  log(`[RECEIVED:SUCCESS]`, 'success');
-  log(`msg from:${client.ip}`, 'info');
-  log(`[msg]:${reply}`, '');
-  log(`[RECEIVED:END]`, 'tag');
-  state.stats.recv++;
-  addMsg(fromLabel, reply, type);
-  updateUI();
+
+  showTyping(client.hostname);
+
+  setTimeout(() => {
+    removeTyping();
+
+    const reply = replies[Math.floor(Math.random() * replies.length)];
+    const fromLabel = state.broadcastMode ? `BROADCAST ← ${client.hostname}` : `← ${client.hostname}`;
+    const type = state.broadcastMode ? 'broadcast' : '';
+
+    log('[RECEIVED:SUCCESS]', 'success');
+    log(`msg from:${client.ip}`, 'info');
+    log(`[msg]:${reply}`, '');
+    log('[RECEIVED:END]', 'tag');
+
+    state.stats.recv++;
+    addMsg(fromLabel, reply, type);
+    showToast(`New message from ${client.hostname}`, 'info');
+    updateUI();
+  }, 900 + Math.random() * 1200);
 }
 
 // ─── BLOCK / UNBLOCK ─────────────────────────────────────────────────
@@ -1181,6 +1346,15 @@ function generateDemoClients(myIp, myPort) {
   for (let i = 0; i < count; i++) clients.push(randomClient());
   return clients;
 }
+document.getElementById('clientSearch')?.addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  const items = document.querySelectorAll('.user-item');
+
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(q) ? '' : 'none';
+  });
+});
 
 // ─── INIT ─────────────────────────────────────────────────────────────
 updateUI();
